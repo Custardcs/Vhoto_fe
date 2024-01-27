@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+// import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:photo_manager/photo_manager.dart';
 
 void main() {
   runApp(MyApp());
@@ -22,35 +25,82 @@ class UploadScreen extends StatefulWidget {
 }
 
 class _UploadScreenState extends State<UploadScreen> {
-  final ImagePicker _picker = ImagePicker();
   String _response = '';
+  List<String> uploadedHashes = [];
+  int totalPhotos = 0;
+  int photosUploaded = 0;
 
-  Future<void> _uploadFile() async {
-    if (await isConnected()) {
-      final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-      if (image != null) {
+  Future<bool> _requestPermission() async {
+    var result = await PhotoManager.requestPermissionExtend();
+    return result.isAuth;
+  }
+
+  Future<List<AssetEntity>> _fetchAllPhotos() async {
+    if (!(await _requestPermission())) {
+      return [];
+    }
+
+    // Obtain the album list
+    List<AssetPathEntity> albums =
+        await PhotoManager.getAssetPathList(onlyAll: true);
+    List<AssetEntity> allPhotos = [];
+
+    // Define the batch size
+    int batchSize =
+        500; // Adjust this number based on performance and memory usage
+    int currentPage = 0;
+    bool hasMore = true;
+
+    while (hasMore) {
+      List<AssetEntity> photos =
+          await albums[0].getAssetListPaged(page: currentPage, size: batchSize);
+      allPhotos.addAll(photos);
+
+      // Check if there are more photos to fetch
+      if (photos.length < batchSize) {
+        hasMore = false;
+      } else {
+        currentPage++;
+      }
+    }
+
+    return allPhotos;
+  }
+
+  Future<void> _uploadAllPhotos() async {
+  if (await isConnected()) {
+    List<AssetEntity> photos = await _fetchAllPhotos();
+    totalPhotos = photos.length;  // Set the total number of photos
+
+    for (var photo in photos) {
+      var file = await photo.file;
+      if (file != null) {
         var request = http.MultipartRequest(
             'POST', Uri.parse('http://192.168.98.101:3000/upload'));
-        request.files
-            .add(await http.MultipartFile.fromPath('file', image.path));
+        request.files.add(await http.MultipartFile.fromPath('file', file.path));
+
         var res = await request.send();
         final resData = await res.stream.bytesToString();
-        setState(() {
-          _response = resData;
-        });
-      } else {
-        setState(() {
-          _response = 'error';
-        });
+        var data = json.decode(resData);
+        if (data['fileHash'] != null) {
+          uploadedHashes.add(data['fileHash']);
+          photosUploaded++;  // Increment the count of uploaded photos
+        }
       }
-    } else {
       setState(() {
-        _response = 'No internet connection available';
+        _response = '$photosUploaded of $totalPhotos uploaded';
       });
-      //print('No internet connection available');
-      // Handle the lack of connection
     }
+    setState(() {
+      _response = 'All photos uploaded. Hashes: $uploadedHashes';
+    });
+  } else {
+    setState(() {
+      _response = 'No internet connection available';
+    });
   }
+}
+
 
   Future<bool> isConnected() async {
     var connectivityResult = await Connectivity().checkConnectivity();
@@ -70,8 +120,8 @@ class _UploadScreenState extends State<UploadScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             ElevatedButton(
-              onPressed: _uploadFile,
-              child: Text('Upload Image'),
+              onPressed: _uploadAllPhotos,
+              child: Text('Upload All Images'),
             ),
             SizedBox(height: 20),
             Text(_response),
