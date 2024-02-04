@@ -23,7 +23,9 @@ class _MyAppState extends State<MyApp> {
   List<Album>? _albums;
   bool _loading = false;
   StreamSubscription<ConnectivityResult>? _connectivitySubscription;
-  String _response = 'TEST TEST';
+  Timer? _connectivityTimer;
+  bool _isUploading = false;
+  String _response = 'No photos uploaded yet';
   List uploadedHashes = [];
   int photosUploaded = 0;
   int totalPhotos = 0;
@@ -34,15 +36,16 @@ class _MyAppState extends State<MyApp> {
     _loading = true;
     initAsync();
 
-    // Add a listener to check for network connectivity changes
     _connectivitySubscription =
         Connectivity().onConnectivityChanged.listen((result) {
       if (result == ConnectivityResult.wifi ||
           result == ConnectivityResult.mobile) {
-        // Start uploading photos when there is a network connection
-        _uploadAllPhotos();
+        _checkAndUploadPhotos();
       }
     });
+
+    _connectivityTimer = Timer.periodic(
+        Duration(minutes: 5), (Timer t) => _checkAndUploadPhotos());
   }
 
   Future<void> initAsync() async {
@@ -50,6 +53,7 @@ class _MyAppState extends State<MyApp> {
       bool isConnected = await _checkConnectivity();
       if (isConnected) {
         List<Album> albums = await PhotoGallery.listAlbums();
+        print("Found ${albums.length} albums");
         setState(() {
           _albums = albums;
           _loading = false;
@@ -58,8 +62,11 @@ class _MyAppState extends State<MyApp> {
         setState(() {
           _response = "No internet connection available";
         });
-        print("No internet connection available");
       }
+    } else {
+      setState(() {
+        _response = "Permission not granted";
+      });
     }
     setState(() {
       _loading = false;
@@ -73,20 +80,46 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<bool> _promptPermissionSetting() async {
-    if (Platform.isIOS) {
-      if (await Permission.photos.request().isGranted ||
-          await Permission.storage.request().isGranted) {
-        return true;
-      }
+    var photosStatus = await Permission.photos.status;
+    var storageStatus = await Permission.storage.status;
+    print("Initial Photos Permission: $photosStatus");
+    print("Initial Storage Permission: $storageStatus");
+
+    if (!photosStatus.isGranted) {
+      await Permission.photos.request();
     }
-    if (Platform.isAndroid) {
-      if (await Permission.storage.request().isGranted ||
-          await Permission.photos.request().isGranted &&
-              await Permission.videos.request().isGranted) {
-        return true;
-      }
+    if (!storageStatus.isGranted) {
+      await Permission.storage.request();
     }
-    return false;
+
+    photosStatus = await Permission.photos.status;
+    if (photosStatus.isPermanentlyDenied) {
+      // Open app settings
+      openAppSettings();
+    }
+
+    photosStatus = await Permission.photos.status;
+    storageStatus = await Permission.storage.status;
+    print("Final Photos Permission: $photosStatus");
+    print("Final Storage Permission: $storageStatus");
+
+    return photosStatus.isGranted && storageStatus.isGranted;
+  }
+
+  Future<void> _checkAndUploadPhotos() async {
+    bool isConnected = await _checkConnectivity();
+    if (isConnected && !_isUploading) {
+      _isUploading = true;
+      try {
+        await _uploadAllPhotos();
+      } finally {
+        _isUploading = false;
+      }
+    } else if (!isConnected) {
+      setState(() {
+        _response = 'No internet connection available';
+      });
+    }
   }
 
   Future<void> _uploadAllPhotos() async {
@@ -94,22 +127,12 @@ class _MyAppState extends State<MyApp> {
       try {
         if (_albums != null) {
           for (var album in _albums!) {
-            // Inside this loop, you can access the photos in the current album.
-            // You can retrieve the photos using the `album.listMedia()` method.
-            // This method returns a `MediaPage` object containing the photos in the album.
-            print(album);
-            // For example, you can fetch the photos for the current album like this:
             MediaPage mediaPage = await album.listMedia();
             List<Medium>? photos = mediaPage.items;
-
-            // Now, you have access to the `photos` variable, which contains the photos
-            // in the current album. You can loop through these photos and upload them.
+            totalPhotos += photos.length; // Update total photos count
 
             for (var photo in photos) {
-              // Upload the photo to the server here.
-              // You can use the `_uploadPhoto` method or any other method you prefer.
               var file = await PhotoGallery.getFile(mediumId: photo.id);
-
               var request = http.MultipartRequest(
                 'POST',
                 Uri.parse('http://192.168.98.101:3000/upload'),
@@ -124,6 +147,7 @@ class _MyAppState extends State<MyApp> {
                 uploadedHashes.add(data['fileHash']);
                 photosUploaded++; // Increment the count of uploaded photos
               }
+
               setState(() {
                 _response = '$photosUploaded of $totalPhotos uploaded';
               });
@@ -133,9 +157,6 @@ class _MyAppState extends State<MyApp> {
       } catch (e) {
         print('Error uploading photos: $e');
       }
-      // setState(() {
-      //   _response = 'All photos uploaded. Hashes: $uploadedHashes';
-      // });
     } else {
       setState(() {
         _response = 'No internet connection available';
@@ -144,7 +165,16 @@ class _MyAppState extends State<MyApp> {
   }
 
   @override
+  void dispose() {
+    _connectivitySubscription?.cancel();
+    _connectivityTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Implement your widget build method
+    // This should return your app's home screen, handling _loading and displaying _albums
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(
@@ -153,77 +183,81 @@ class _MyAppState extends State<MyApp> {
         body: Column(
           children: <Widget>[
             Text(_response),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                double gridWidth = (constraints.maxWidth - 20) / 3;
-                double gridHeight = gridWidth + 33;
-                double ratio = gridWidth / gridHeight;
-                return Container(
-                  padding: const EdgeInsets.all(5),
-                  child: GridView.count(
-                    childAspectRatio: ratio,
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 5.0,
-                    crossAxisSpacing: 5.0,
-                    children: <Widget>[
-                      ...?_albums?.map(
-                        (album) => GestureDetector(
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                                builder: (context) => AlbumPage(album)),
-                          ),
-                          child: Column(
-                            children: <Widget>[
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(5.0),
-                                child: Container(
-                                  color: const Color.fromARGB(255, 17, 184, 67),
-                                  height: gridWidth,
-                                  width: gridWidth,
-                                  child: FadeInImage(
-                                    fit: BoxFit.cover,
-                                    placeholder: MemoryImage(kTransparentImage),
-                                    image: AlbumThumbnailProvider(
-                                      album: album,
-                                      highQuality: true,
-                                    ),
-                                  ),
-                                ),
+            _loading
+                ? CircularProgressIndicator()
+                : _albums != null
+                    ? _buildAlbumGrid(context)
+                    : Text("No albums found or permission not granted."),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAlbumGrid(BuildContext context) {
+    // Wrap the GridView with an Expanded widget
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(5),
+        child: GridView.count(
+          shrinkWrap: true, // Add shrinkWrap to true if you still face issues
+          physics: ScrollPhysics(), // Add physics property to enable scrolling
+          crossAxisCount: 3,
+          mainAxisSpacing: 5.0,
+          crossAxisSpacing: 5.0,
+          children: <Widget>[
+            ...?_albums
+                ?.map(
+                  (album) => GestureDetector(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (context) => AlbumPage(album)),
+                    ),
+                    child: Column(
+                      children: <Widget>[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(5.0),
+                          child: Container(
+                            color: const Color.fromARGB(255, 17, 184, 67),
+                            child: FadeInImage(
+                              fit: BoxFit.cover,
+                              placeholder: MemoryImage(kTransparentImage),
+                              image: AlbumThumbnailProvider(
+                                album: album,
+                                highQuality: true,
                               ),
-                              Container(
-                                alignment: Alignment.topLeft,
-                                padding: EdgeInsets.only(left: 2.0),
-                                child: Text(
-                                  album.name ?? "Unnamed Album",
-                                  maxLines: 1,
-                                  textAlign: TextAlign.start,
-                                  style: TextStyle(
-                                    height: 1.2,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                              Container(
-                                alignment: Alignment.topLeft,
-                                padding: const EdgeInsets.only(left: 2.0),
-                                child: Text(
-                                  album.count.toString(),
-                                  textAlign: TextAlign.start,
-                                  style: TextStyle(
-                                    height: 1.2,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                        Container(
+                          alignment: Alignment.topLeft,
+                          padding: EdgeInsets.only(left: 2.0),
+                          child: Text(
+                            album.name ?? "Unnamed Album",
+                            maxLines: 1,
+                            textAlign: TextAlign.start,
+                            style: TextStyle(
+                              height: 1.2,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          alignment: Alignment.topLeft,
+                          padding: const EdgeInsets.only(left: 2.0),
+                          child: Text(
+                            album.count.toString(),
+                            textAlign: TextAlign.start,
+                            style: TextStyle(
+                              height: 1.2,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                );
-              },
-            )
+                )
+                .toList(),
           ],
         ),
       ),
