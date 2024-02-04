@@ -80,30 +80,24 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<bool> _promptPermissionSetting() async {
-    var photosStatus = await Permission.photos.status;
+
     var storageStatus = await Permission.storage.status;
-    print("Initial Photos Permission: $photosStatus");
     print("Initial Storage Permission: $storageStatus");
 
-    if (!photosStatus.isGranted) {
-      await Permission.photos.request();
-    }
     if (!storageStatus.isGranted) {
       await Permission.storage.request();
     }
 
-    photosStatus = await Permission.photos.status;
-    if (photosStatus.isPermanentlyDenied) {
+    storageStatus = await Permission.storage.status;
+    if (storageStatus.isPermanentlyDenied) {
       // Open app settings
       openAppSettings();
     }
 
-    photosStatus = await Permission.photos.status;
     storageStatus = await Permission.storage.status;
-    print("Final Photos Permission: $photosStatus");
     print("Final Storage Permission: $storageStatus");
 
-    return photosStatus.isGranted && storageStatus.isGranted;
+    return storageStatus.isGranted;
   }
 
   Future<void> _checkAndUploadPhotos() async {
