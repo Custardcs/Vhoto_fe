@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:photo_gallery/photo_gallery.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:video_player/video_player.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 void main() {
   runApp(MyApp());
@@ -49,6 +50,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> initAsync() async {
+    checkAndroidVersion();
     if (await _promptPermissionSetting()) {
       bool isConnected = await _checkConnectivity();
       if (isConnected) {
@@ -78,6 +80,22 @@ class _MyAppState extends State<MyApp> {
     return connectivityResult == ConnectivityResult.mobile ||
         connectivityResult == ConnectivityResult.wifi;
   }
+
+  Future<void> checkAndroidVersion() async {
+  DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+  AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+  print('Running on Android ${androidInfo.version.sdkInt}'); // SDK integer value
+
+  // Example: Check if Android version is less than 29 (Android 10)
+  if (androidInfo.version.sdkInt! < 29) {
+    print('This device is running on an Android version less than Android 10');
+    // You can call _promptPermissionSetting() here or handle older Android versions as needed
+  } else {
+    print('This device is running Android 10 or above');
+    // Handle accordingly
+  }
+}
+
 
   Future<bool> _promptPermissionSetting() async {
 
