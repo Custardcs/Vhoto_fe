@@ -55,6 +55,9 @@ class _MyAppState extends State<MyApp> {
           _loading = false;
         });
       } else {
+        setState(() {
+          _response = "No internet connection available";
+        });
         print("No internet connection available");
       }
     }
@@ -111,7 +114,8 @@ class _MyAppState extends State<MyApp> {
                 'POST',
                 Uri.parse('http://192.168.98.101:3000/upload'),
               );
-              request.files.add(await http.MultipartFile.fromPath('file', file.path));
+              request.files
+                  .add(await http.MultipartFile.fromPath('file', file.path));
 
               var res = await request.send();
               final resData = await res.stream.bytesToString();
@@ -146,85 +150,82 @@ class _MyAppState extends State<MyApp> {
         appBar: AppBar(
           title: const Text('Photo Backup'),
         ),
-        body: _loading
-            ? Center(
-                child: CircularProgressIndicator(),
-              )
-            : LayoutBuilder(
-                builder: (context, constraints) {
-                  double gridWidth = (constraints.maxWidth - 20) / 3;
-                  double gridHeight = gridWidth + 33;
-                  double ratio = gridWidth / gridHeight;
-                  return Container(
-                    padding: EdgeInsets.all(5),
-                    child: GridView.count(
-                      childAspectRatio: ratio,
-                      crossAxisCount: 3,
-                      mainAxisSpacing: 5.0,
-                      crossAxisSpacing: 5.0,
-                      children: <Widget>[
-                        ...?_albums?.map(
-                          (album) => GestureDetector(
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (context) => AlbumPage(album)),
-                            ),
-                            child: Column(
-                              children: <Widget>[
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(5.0),
-                                  child: Container(
-                                    color: Color.fromARGB(255, 17, 184, 67),
-                                    height: gridWidth,
-                                    width: gridWidth,
-                                    child: FadeInImage(
-                                      fit: BoxFit.cover,
-                                      placeholder:
-                                          MemoryImage(kTransparentImage),
-                                      image: AlbumThumbnailProvider(
-                                        album: album,
-                                        highQuality: true,
-                                      ),
+        body: Column(
+          children: <Widget>[
+            Text(_response),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                double gridWidth = (constraints.maxWidth - 20) / 3;
+                double gridHeight = gridWidth + 33;
+                double ratio = gridWidth / gridHeight;
+                return Container(
+                  padding: const EdgeInsets.all(5),
+                  child: GridView.count(
+                    childAspectRatio: ratio,
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 5.0,
+                    crossAxisSpacing: 5.0,
+                    children: <Widget>[
+                      ...?_albums?.map(
+                        (album) => GestureDetector(
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (context) => AlbumPage(album)),
+                          ),
+                          child: Column(
+                            children: <Widget>[
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(5.0),
+                                child: Container(
+                                  color: const Color.fromARGB(255, 17, 184, 67),
+                                  height: gridWidth,
+                                  width: gridWidth,
+                                  child: FadeInImage(
+                                    fit: BoxFit.cover,
+                                    placeholder: MemoryImage(kTransparentImage),
+                                    image: AlbumThumbnailProvider(
+                                      album: album,
+                                      highQuality: true,
                                     ),
                                   ),
                                 ),
-                                Container(
-                                  alignment: Alignment.topLeft,
-                                  padding: EdgeInsets.only(left: 2.0),
-                                  child: Text(
-                                    album.name ?? "Unnamed Album",
-                                    maxLines: 1,
-                                    textAlign: TextAlign.start,
-                                    style: TextStyle(
-                                      height: 1.2,
-                                      fontSize: 16,
-                                    ),
+                              ),
+                              Container(
+                                alignment: Alignment.topLeft,
+                                padding: EdgeInsets.only(left: 2.0),
+                                child: Text(
+                                  album.name ?? "Unnamed Album",
+                                  maxLines: 1,
+                                  textAlign: TextAlign.start,
+                                  style: TextStyle(
+                                    height: 1.2,
+                                    fontSize: 16,
                                   ),
                                 ),
-                                Container(
-                                  alignment: Alignment.topLeft,
-                                  padding: EdgeInsets.only(left: 2.0),
-                                  child: Text(
-                                    album.count.toString(),
-                                    textAlign: TextAlign.start,
-                                    style: TextStyle(
-                                      height: 1.2,
-                                      fontSize: 12,
-                                    ),
+                              ),
+                              Container(
+                                alignment: Alignment.topLeft,
+                                padding: const EdgeInsets.only(left: 2.0),
+                                child: Text(
+                                  album.count.toString(),
+                                  textAlign: TextAlign.start,
+                                  style: TextStyle(
+                                    height: 1.2,
+                                    fontSize: 12,
                                   ),
                                 ),
-                                Container(
-                                  child: Text(_response),
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                  );
-                },
-              ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            )
+          ],
+        ),
       ),
     );
   }
@@ -261,7 +262,7 @@ class AlbumPageState extends State<AlbumPage> {
       home: Scaffold(
         appBar: AppBar(
           leading: IconButton(
-            icon: Icon(Icons.arrow_back_ios),
+            icon: const Icon(Icons.arrow_back_ios),
             onPressed: () => Navigator.of(context).pop(),
           ),
           title: Text(widget.album.name ?? "Unnamed Album"),
@@ -279,7 +280,7 @@ class AlbumPageState extends State<AlbumPage> {
                 child: Stack(
                   children: [
                     Container(
-                      color: Color.fromARGB(255, 8, 210, 236),
+                      color: const Color.fromARGB(255, 8, 210, 236),
                       child: FadeInImage(
                         fit: BoxFit.cover,
                         placeholder: MemoryImage(kTransparentImage),
@@ -296,7 +297,7 @@ class AlbumPageState extends State<AlbumPage> {
                       child: Container(
                         width: 10,
                         height: 10,
-                        decoration: BoxDecoration(
+                        decoration: const BoxDecoration(
                           shape: BoxShape.circle,
                           color: Colors.green,
                         ),
@@ -326,7 +327,7 @@ class ViewerPage extends StatelessWidget {
         appBar: AppBar(
           leading: IconButton(
             onPressed: () => Navigator.of(context).pop(),
-            icon: Icon(Icons.arrow_back_ios),
+            icon: const Icon(Icons.arrow_back_ios),
           ),
           title: date != null ? Text(date.toLocal().toString()) : null,
         ),
