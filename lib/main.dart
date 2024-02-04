@@ -207,74 +207,64 @@ class _MyAppState extends State<MyApp> {
   }
 
   Widget _buildAlbumGrid(BuildContext context) {
-    // Wrap the GridView with an Expanded widget
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(5),
-        child: GridView.count(
-          shrinkWrap: true, // Add shrinkWrap to true if you still face issues
-          physics: ScrollPhysics(), // Add physics property to enable scrolling
+  return Expanded(
+    child: Container(
+      padding: const EdgeInsets.all(5),
+      child: GridView.builder(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,
-          mainAxisSpacing: 5.0,
           crossAxisSpacing: 5.0,
-          children: <Widget>[
-            ...?_albums
-                ?.map(
-                  (album) => GestureDetector(
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (context) => AlbumPage(album)),
-                    ),
-                    child: Column(
-                      children: <Widget>[
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(5.0),
-                          child: Container(
-                            color: const Color.fromARGB(255, 17, 184, 67),
-                            child: FadeInImage(
-                              fit: BoxFit.cover,
-                              placeholder: MemoryImage(kTransparentImage),
-                              image: AlbumThumbnailProvider(
-                                album: album,
-                                highQuality: true,
-                              ),
-                            ),
-                          ),
-                        ),
-                        Container(
-                          alignment: Alignment.topLeft,
-                          padding: EdgeInsets.only(left: 2.0),
-                          child: Text(
-                            album.name ?? "Unnamed Album",
-                            maxLines: 1,
-                            textAlign: TextAlign.start,
-                            style: TextStyle(
-                              height: 1.2,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          alignment: Alignment.topLeft,
-                          padding: const EdgeInsets.only(left: 2.0),
-                          child: Text(
-                            album.count.toString(),
-                            textAlign: TextAlign.start,
-                            style: TextStyle(
-                              height: 1.2,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ],
+          mainAxisSpacing: 5.0,
+          childAspectRatio: 1.0, // Ensures 1:1 aspect ratio for grid tiles
+        ),
+        itemCount: _albums?.length ?? 0, // Handle null with a fallback to 0
+        itemBuilder: (context, index) {
+          final album = _albums![index];
+          return GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (context) => AlbumPage(album)),
+            ),
+            child: Stack(
+              alignment: Alignment.bottomLeft, // Align text to the bottom left of the stack
+              children: <Widget>[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(5.0),
+                  child: FadeInImage(
+                    fit: BoxFit.cover,
+                    width: double.infinity, // Ensures the image covers the tile width
+                    height: double.infinity, // Ensures the image covers the tile height
+                    placeholder: MemoryImage(kTransparentImage),
+                    image: AlbumThumbnailProvider(
+                      album: album,
+                      highQuality: true,
                     ),
                   ),
-                )
-                .toList(),
-          ],
-        ),
+                ),
+                Container(
+                  // Semi-transparent overlay for text readability
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(5.0),
+                      bottomRight: Radius.circular(5.0),
+                    ),
+                  ),
+                  child: Text(
+                    "${album.name ?? "Unnamed Album"} (${album.count})",
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
-    );
-  }
+    ),
+  );
+}
+
 }
 
 class AlbumPage extends StatefulWidget {
@@ -304,60 +294,68 @@ class AlbumPageState extends State<AlbumPage> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          title: Text(widget.album.name ?? "Unnamed Album"),
+  return MaterialApp(
+    home: Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios),
+          onPressed: () => Navigator.of(context).pop(),
         ),
-        body: GridView.count(
-          crossAxisCount: 3,
-          mainAxisSpacing: 1.0,
-          crossAxisSpacing: 1.0,
-          children: <Widget>[
-            ...?_media?.map(
-              (medium) => GestureDetector(
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (context) => ViewerPage(medium)),
-                ),
-                child: Stack(
-                  children: [
-                    Container(
-                      color: const Color.fromARGB(255, 8, 210, 236),
-                      child: FadeInImage(
-                        fit: BoxFit.cover,
-                        placeholder: MemoryImage(kTransparentImage),
-                        image: ThumbnailProvider(
-                          mediumId: medium.id,
-                          mediumType: medium.mediumType,
-                          highQuality: true,
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 5,
-                      right: 5,
-                      child: Container(
-                        width: 10,
-                        height: 10,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.green,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
+        title: Text(widget.album.name ?? "Unnamed Album"),
       ),
-    );
-  }
+      body: GridView.builder(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 5.0,
+          mainAxisSpacing: 5.0,
+          childAspectRatio: 1.0, // Ensures 1:1 aspect ratio for grid tiles
+        ),
+        itemCount: _media?.length ?? 0, // Null check and fallback to 0
+        itemBuilder: (context, index) {
+          final medium = _media![index]; // Null check already done by itemCount
+          return GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (context) => ViewerPage(medium)),
+            ),
+            child: Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(5.0),
+                  child: FadeInImage(
+                    fit: BoxFit.cover,
+                    width: double.infinity, // Ensures the image covers the tile width
+                    height: double.infinity, // Ensures the image covers the tile height
+                    placeholder: MemoryImage(kTransparentImage),
+                    image: ThumbnailProvider(
+                      mediumId: medium.id,
+                      mediumType: medium.mediumType,
+                      highQuality: true,
+                    ),
+                  ),
+                ),
+
+                Positioned(
+                  top: 5,
+                  right: 5,
+                  child: Container(
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Color.fromARGB(255, 166, 255, 0),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    ),
+  );
+}
+
+
 }
 
 class ViewerPage extends StatelessWidget {
