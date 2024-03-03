@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'package:flutter/material.dart';
+import 'package:photoclient/database_helper.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
@@ -25,10 +26,11 @@ class _MyAppState extends State<MyApp> {
   bool _isLoadingAlbums = false; //isloading // is working
   bool _isUploading = false; //is uploading
   // List<Album>? _albums; //albams
-  List<Medium>? _media; //media in an album
+  List<ExtendedMedium>? _media; //media in an album
   String _response = ''; // notification
   StreamSubscription<ConnectivityResult>? _connectivitySubscription; // make sure we are connected
   Timer? _connectivityTimer; // check every so often
+  Timer? _DBTimer; // check every so often
   List uploadedHashes = []; //this should be a database
 
   int totalSafePhotos = 0;
@@ -40,7 +42,9 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _isLoadingAlbums = true;
-    initAsync();
+    initGetAlbums();
+
+    DatabaseHelper.instance.clearDatabase();
 
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((result) {
       if (result == ConnectivityResult.wifi || result == ConnectivityResult.mobile) {
@@ -49,24 +53,18 @@ class _MyAppState extends State<MyApp> {
     });
 
     _connectivityTimer = Timer.periodic(Duration(minutes: 1), (Timer t) => _checkAndUploadPhotos());
+    _DBTimer = Timer.periodic(Duration(minutes: 2), (Timer t) => initGetAlbums());
   }
 
-  Future<void> initAsync() async {
+  Future<void> initGetAlbums() async {
     if (await _promptPermissionSetting()) {
-      bool isConnected = await _checkConnectivity();
-      if (isConnected) {
-        List<Album> albums = await PhotoGallery.listAlbums();
-        MediaPage mediaPage = await albums[0].listMedia();
-
-        setState(() {
-          _media = mediaPage.items;
-          _isLoadingAlbums = false;
-        });
-      } else {
-        setState(() {
-          _response = "No internet connection available";
-        });
-      }
+      List<Album> albums = await PhotoGallery.listAlbums();
+      MediaPage mediaPage = await albums[0].listMedia();
+      // Convert each Medium object to an ExtendedMedium object
+      List<ExtendedMedium> extendedMedia = mediaPage.items.map((medium) => ExtendedMedium(medium: medium)).toList();
+      setState(() {
+        _media = extendedMedia;
+      });
     } else {
       setState(() {
         _response = "Permission not granted";
@@ -122,8 +120,38 @@ class _MyAppState extends State<MyApp> {
     if (await _checkConnectivity()) {
       try {
         if (_media != null) {
+          var db = await DatabaseHelper.instance.queryAllRows();
           for (var photo in _media!) {
-            var file = await PhotoGallery.getFile(mediumId: photo.id);
+            print(db.length);
+            if (_media!.length > db.length) {
+              print("_media!.length ${_media!.length} db.length ${db.length} YES");
+            } else if (db.length > _media!.length) {
+              print("_media!.length ${_media!.length} db.length ${db.length} PROBLEM");
+              //this should fix the local DB
+              continue;
+            } else {
+              setState(() {
+                photo.uploadStatus = UploadStatus.success;
+              });
+              print("_media!.length ${_media!.length} db.length ${db.length} NO");
+              continue;
+            }
+
+            var file = await PhotoGallery.getFile(mediumId: photo.medium.id);
+            var dbid;
+            setState(() {
+              photo.uploadStatus = UploadStatus.uploading;
+            });
+            //ADD TO LOCALDB
+            DatabaseHelper.instance.insert({
+              DatabaseHelper.columnHash: '',
+              DatabaseHelper.columnPath: file.path,
+              DatabaseHelper.columnUploaded: 0, // Assuming 0 is false and 1 is true
+            }).then((id) {
+              print('Inserted row id: $id');
+              dbid = id;
+            });
+            //send to server
             var request = http.MultipartRequest('POST', Uri.parse('http://192.168.98.244:3000/upload'));
             request.files.add(await http.MultipartFile.fromPath('file', file.path));
 
@@ -131,49 +159,106 @@ class _MyAppState extends State<MyApp> {
             final resData = await res.stream.bytesToString();
             var data = json.decode(resData);
             if (data['fileHash'] != null) {
+              print("fileHashfileHashfileHashfileHashfileHash");
+              print(data);
               uploadedHashes.add(data['fileHash']);
               totalSafePhotos++; // Increment the count of uploaded photos
+              DatabaseHelper.instance.updateUploadStatus(dbid, 1).then((updatedCount) {
+                print('Updated $updatedCount row(s)');
+              });
+              setState(() {
+                photo.uploadStatus = UploadStatus.success;
+              });
             } else {
               setState(() {
-                _response = 'null';
+                photo.uploadStatus = UploadStatus.failure;
               });
             }
           }
+        } else {
+          print('Error _media ==== null');
         }
       } catch (e) {
-        //print('Error uploading photos: $e');
+        print('Error uploading photos: $e');
       }
     } else {
       setState(() {
-        _response = 'No internet connection available';
+        _response = 'No Server Found';
       });
     }
   }
 
-  Stack _buildGridItem(Medium med, int index) {
+  // Stack _buildGridItem(Medium med, int index) {
+  //   return Stack(
+  //     alignment: Alignment.center,
+  //     children: [
+  //       ClipRRect(
+  //         borderRadius: BorderRadius.circular(5.0),
+  //         child: FadeInImage(
+  //           fit: BoxFit.cover,
+  //           width: double.infinity, // Ensures the image covers the tile width
+  //           height: double.infinity, // Ensures the image covers the tile height
+  //           placeholder: MemoryImage(kTransparentImage),
+  //           image: ThumbnailProvider(
+  //             mediumId: med.id,
+  //             mediumType: med.mediumType,
+  //             highQuality: true,
+  //           ),
+  //         ),
+  //       ),
+  //       index % 2 == 0
+  //           ? Icon(
+  //               Icons.check,
+  //               color: Colors.white,
+  //             )
+  //           : Icon(Icons.close, color: Colors.white),
+  //     ],
+  //   );
+  // }
+  Stack _buildGridItem(ExtendedMedium extendedMed, int index) {
+    Widget statusIcon;
+    Widget c;
+    switch (extendedMed.uploadStatus) {
+      case UploadStatus.uploading:
+        statusIcon = Icon(Icons.upload, color: Color.fromARGB(255, 201, 10, 90));
+        break;
+      case UploadStatus.success:
+        statusIcon = Icon(Icons.check, color: Colors.green);
+        break;
+      case UploadStatus.failure:
+        statusIcon = Icon(Icons.close, color: Colors.red);
+        break;
+      default:
+        statusIcon = Icon(Icons.question_mark, color: Colors.blue); // No icon for pending status
+    }
+
+    c = Container(
+        decoration:
+            BoxDecoration(color: Color.fromRGBO(62, 62, 62, 1), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(5))),
+        child: statusIcon);
+
     return Stack(
       alignment: Alignment.center,
       children: [
         ClipRRect(
-          borderRadius: BorderRadius.circular(5.0),
+          borderRadius: BorderRadius.circular(12),
           child: FadeInImage(
             fit: BoxFit.cover,
             width: double.infinity, // Ensures the image covers the tile width
             height: double.infinity, // Ensures the image covers the tile height
             placeholder: MemoryImage(kTransparentImage),
             image: ThumbnailProvider(
-              mediumId: med.id,
-              mediumType: med.mediumType,
+              mediumId: extendedMed.medium.id,
+              mediumType: extendedMed.medium.mediumType,
               highQuality: true,
             ),
           ),
         ),
-        index % 2 == 0
-            ? Icon(
-                Icons.check,
-                color: Colors.white,
-              )
-            : Icon(Icons.close, color: Colors.white),
+        Positioned(
+          right: 0,
+          top: 0,
+          child: c,
+        ),
       ],
     );
   }
@@ -182,6 +267,7 @@ class _MyAppState extends State<MyApp> {
   void dispose() {
     _connectivitySubscription?.cancel();
     _connectivityTimer?.cancel();
+    _DBTimer?.cancel();
     super.dispose();
   }
 
@@ -322,4 +408,14 @@ class _MyAppState extends State<MyApp> {
       ),
     );
   }
+}
+
+enum UploadStatus { pending, uploading, success, failure }
+
+class ExtendedMedium {
+  final Medium medium; // Assuming `Medium` is your photo model
+  UploadStatus uploadStatus;
+  double uploadProgress;
+
+  ExtendedMedium({required this.medium, this.uploadStatus = UploadStatus.pending, this.uploadProgress = 50.0});
 }
