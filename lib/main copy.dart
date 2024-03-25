@@ -14,10 +14,12 @@ import 'package:video_player/video_player.dart';
 // import 'package:device_info_plus/device_info_plus.dart';
 
 void main() {
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatefulWidget {
+  const MyApp({super.key});
+
   @override
   _MyAppState createState() => _MyAppState();
 }
@@ -45,7 +47,7 @@ class _MyAppState extends State<MyApp> {
       }
     });
 
-    _connectivityTimer = Timer.periodic(Duration(minutes: 5), (Timer t) => _checkAndUploadPhotos());
+    _connectivityTimer = Timer.periodic(const Duration(minutes: 5), (Timer t) => _checkAndUploadPhotos());
   }
 
   Future<void> initAsync() async {
@@ -230,7 +232,7 @@ class _MyAppState extends State<MyApp> {
                     Container(
                       width: 50,
                       height: 50,
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         shape: BoxShape.circle,
                         color: Colors.grey,
                       ),
@@ -315,7 +317,7 @@ class _MyAppState extends State<MyApp> {
 class AlbumPage extends StatefulWidget {
   final Album album;
 
-  AlbumPage(Album album) : album = album;
+  const AlbumPage(Album album, {super.key}) : album = album;
 
   @override
   State<StatefulWidget> createState() => AlbumPageState();
@@ -403,7 +405,7 @@ class AlbumPageState extends State<AlbumPage> {
 class ViewerPage extends StatelessWidget {
   final Medium medium;
 
-  ViewerPage(Medium medium) : medium = medium;
+  const ViewerPage(Medium medium, {super.key}) : medium = medium;
 
   @override
   Widget build(BuildContext context) {
@@ -442,7 +444,7 @@ class ViewerPage extends StatelessWidget {
 class VideoProvider extends StatefulWidget {
   final String mediumId;
 
-  const VideoProvider({
+  const VideoProvider({super.key, 
     required this.mediumId,
   });
 

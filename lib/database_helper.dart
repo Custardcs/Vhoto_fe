@@ -5,14 +5,14 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 
 class DatabaseHelper {
-  static final _databaseName = "MyDatabase.db";
-  static final _databaseVersion = 1;
-  static final table = 'uploads';
+  static const _databaseName = "MyDatabase.db";
+  static const _databaseVersion = 1;
+  static const table = 'uploads';
 
-  static final columnId = '_id';
-  static final columnHash = 'hash';
-  static final columnPath = 'path';
-  static final columnUploaded = 'uploaded';
+  static const columnId = '_id';
+  static const columnHash = 'hash';
+  static const columnPath = 'path';
+  static const columnUploaded = 'uploaded';
 
   // Make this a singleton class.
   DatabaseHelper._privateConstructor();
