@@ -30,6 +30,10 @@ class MyAppState extends State<MyApp> {
   bool isCharging = false; //battery is charging
   bool _isUploading = false; //is uploading or in uploading state.
 
+  int _done = 0;
+  int _busy = 0;
+  int _error = 0;
+
   Timer? _connectivityTimer;
 
   StreamSubscription<ConnectivityResult>? _connectivitySubscription; //the check connectivity
@@ -108,12 +112,15 @@ class MyAppState extends State<MyApp> {
   }
 
   Future<bool> _promptPermissionSetting() async {
+    print('_promptPermissionSetting');
+
     var storageStatus = await Permission.storage.status;
     print("Initial Storage Permission: $storageStatus");
 
-    if (!storageStatus.isGranted) {
-      await Permission.storage.request();
-    }
+    // if (!storageStatus.isGranted) {
+    //   await Permission.storage.request();
+    // }
+    await Permission.storage.request();
 
     storageStatus = await Permission.storage.status;
     if (storageStatus.isPermanentlyDenied) {
@@ -134,7 +141,8 @@ class MyAppState extends State<MyApp> {
 
   Future<void> _checkAndUploadPhotos() async {
     bool isConnected = await _checkConnectivity();
-    if (isConnected && isCharging && !_isUploading) {
+    // if (isConnected && isCharging && !_isUploading) {
+    if (isConnected && !_isUploading) {
       setState(() {
         _isUploading = true;
       });
@@ -147,9 +155,9 @@ class MyAppState extends State<MyApp> {
         });
       }
     } else {
-      print('No wireless connection available 2');
-      print('No charging 2');
-      print('No busy uploading already.');
+      print('No wireless connection available 2 $isConnected');
+      print('No charging 2 $isCharging');
+      print('No busy uploading already. $_isUploading');
     }
   }
 
@@ -159,19 +167,31 @@ class MyAppState extends State<MyApp> {
         if (mediaItems.isNotEmpty) {
           for (var photo in mediaItems) {
             var file = await PhotoGallery.getFile(mediumId: photo.id);
-            var request = http.MultipartRequest('POST', Uri.parse('http://192.168.98.246:3000/upload'));
+            var request = http.MultipartRequest('POST', Uri.parse('http://10.2.35.24:5489/upload'));
             request.files.add(await http.MultipartFile.fromPath('file', file.path));
 
             var res = await request.send();
-            final resData = await res.stream.bytesToString();
-            var data = json.decode(resData);
-            if (data['fileHash'] != null) {
-              //set the value of the current item to done.
-              photo.status = 1; // Update status to 1 (success)
-              photo.hash = data['fileHash']; // Assuming you want to update the hash as well
+            if (res.statusCode == 200) {
+              // Success: Handle the response data
+              final resData = await res.stream.bytesToString();
+              var data = json.decode(resData);
+              print(data);
+              if (data['fileHash'] != null) {
+                // Set the value of the current item to done.
+                photo.status = 1; // Update status to 1 (success)
+                photo.hash = data['fileHash']; // Assuming you want to update the hash as well
+              } else {
+                // Set the value of the current item to error.
+                photo.status = -1; // Update status to 2 (error)
+              }
+            } else if (res.statusCode == 409) {
+              // Conflict: Handle the conflict scenario
+              photo.status = 1;
+              print('Conflict: Resource already exists');
             } else {
-              //set the value of the current item to error.
-              photo.status = 2; // Update status to 2 (error)
+              photo.status = -1; // Update status to 2 (error)
+              // Handle other status codes if needed
+              print('Error: Unexpected status code ${res.statusCode}');
             }
           }
         }
@@ -268,7 +288,7 @@ class MyAppState extends State<MyApp> {
                           onSelectionChanged: filterMediaItems,
                         ),
                       ),
-                      SizedBox(height: MediaQuery.of(context).size.height - 280, child: _buildPhotoGrid(context))
+                      SizedBox(height: MediaQuery.of(context).size.height - 300, child: _buildPhotoGrid(context))
                     ])
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -277,7 +297,19 @@ class MyAppState extends State<MyApp> {
                           "No albums found or permission not granted.",
                           textAlign: TextAlign.center,
                         ),
-                        ElevatedButton(onPressed: _promptPermissionSetting, child: const Text('Get Permissions')),
+                        Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: ElevatedButton(
+                              onPressed: () async => {
+                                    if (await _promptPermissionSetting())
+                                      {print('pressed')}
+                                    else
+                                      {
+                                        if (mounted) {ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No Permission!')))}
+                                      }
+                                  },
+                              child: const Text('Get Permissions')),
+                        ),
                       ],
                     )),
     );
@@ -299,21 +331,21 @@ class MyAppState extends State<MyApp> {
 
         // Assuming `photo.status` holds the value for switch case
         switch (photo.status) {
+          case -1:
+            backgroundColor = const Color.fromRGBO(244, 67, 54, 0.5);
+            displayText = "Error";
+            break;
+          case 0:
+            backgroundColor = const Color.fromRGBO(255, 152, 0, 0.5);
+            displayText = "Busy";
+            break;
           case 1:
             backgroundColor = const Color.fromRGBO(76, 175, 80, 0.5);
             displayText = "Done";
             break;
-          case 2:
+          default:
             backgroundColor = const Color.fromRGBO(255, 152, 0, 0.5);
             displayText = "Busy";
-            break;
-          case 3:
-            backgroundColor = const Color.fromRGBO(244, 67, 54, 0.5);
-            displayText = "Error";
-            break;
-          default:
-            backgroundColor = const Color.fromRGBO(33, 150, 243, 0.5); // Default color
-            displayText = "Waiting"; // Default text
         }
 
         return GestureDetector(
@@ -369,10 +401,10 @@ class MyAppState extends State<MyApp> {
         filteredItems = mediaItems.where((item) => item.status == 1).toList();
         break;
       case Selection.busy:
-        filteredItems = mediaItems.where((item) => item.status == 2).toList();
+        filteredItems = mediaItems.where((item) => item.status == 0).toList();
         break;
       case Selection.error:
-        filteredItems = mediaItems.where((item) => item.status == 3).toList();
+        filteredItems = mediaItems.where((item) => item.status == -1).toList();
         break;
     }
 
