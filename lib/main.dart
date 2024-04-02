@@ -2,7 +2,9 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'dart:async';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:photo_gallery/photo_gallery.dart';
@@ -12,7 +14,9 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:http/http.dart' as http;
 
 void main() {
-  runApp(const MyApp());
+  runApp(MaterialApp(
+    home: MyApp(),
+  ));
 }
 
 class MyApp extends StatefulWidget {
@@ -28,11 +32,15 @@ class MyAppState extends State<MyApp> {
   final Battery _battery = Battery(); //this is for the battery
   bool isLoading = false; // make sure it displays loading
   bool isCharging = false; //battery is charging
-  bool _isUploading = false; //is uploading or in uploading state.
+  bool isUploading = false; //is uploading or in uploading state.
+
+  final tbIpAddress = TextEditingController();
 
   int _done = 0;
   int _busy = 0;
   int _error = 0;
+  String _ip = "192.168.98.246";
+  // String _ip = "10.2.35.24";
 
   Timer? _connectivityTimer;
 
@@ -62,13 +70,9 @@ class MyAppState extends State<MyApp> {
       //get the Albums
       List<Album> albumsList = await PhotoGallery.listAlbums();
       MediaPage mediaList = await albumsList[0].listMedia();
-      //print("Found ${albums.length} albums");
 
       for (var i = 0; i < mediaList.items.length; i++) {
         final shaHash = await sha256Hash(mediaList.items[i].id);
-
-        // var rng = Random();
-        // int randomNumber = rng.nextInt(3) + 1;
 
         mediaItems.add(MediaItem(
           medium: mediaList.items[i],
@@ -111,6 +115,74 @@ class MyAppState extends State<MyApp> {
     });
   }
 
+  Future<void> _checkAndUploadPhotos() async {
+    bool isConnected = await _checkConnectivity();
+    if (isConnected && isCharging && !isUploading) {
+      //if (isConnected && !isUploading) {
+      setState(() {
+        isUploading = true;
+      });
+      try {
+        print('_sendToServer');
+        await _sendToServer();
+      } finally {
+        setState(() {
+          isUploading = false;
+        });
+      }
+    } else {
+      print('No wireless connection available 2 $isConnected');
+      print('No charging 2 $isCharging');
+      print('No busy uploading already. $isUploading');
+    }
+  }
+
+  Future<void> _sendToServer() async {
+    if (await _checkConnectivity()) {
+      try {
+        if (mediaItems.isNotEmpty) {
+          for (var photo in mediaItems) {
+            var file = await PhotoGallery.getFile(mediumId: photo.id);
+            var request = http.MultipartRequest('POST', Uri.parse('http://$_ip:5489/upload'));
+            request.files.add(await http.MultipartFile.fromPath('file', file.path));
+
+            var res = await request.send();
+            if (res.statusCode == 200) {
+              // Success: Handle the response data
+              final resData = await res.stream.bytesToString();
+              var data = json.decode(resData);
+
+              if (data['fileHash'] != null) {
+                // Set the value of the current item to done.
+                photo.status = 1; // Update status to 1 (success)
+                photo.hash = data['fileHash']; // Assuming you want to update the hash as well
+              } else {
+                // Set the value of the current item to error.
+                photo.status = -1; // Update status to 2 (error)
+              }
+            } else if (res.statusCode == 409) {
+              // Conflict: Handle the conflict scenario
+              photo.status = 1;
+              print('Conflict: Resource already exists');
+            } else {
+              photo.status = -1; // Update status to 2 (error)
+              // Handle other status codes if needed
+              print('Error: Unexpected status code ${res.statusCode}');
+            }
+          }
+        }
+      } catch (err) {
+        print('err $err');
+      } finally {
+        setState(() {
+          isUploading = false;
+        });
+      }
+    } else {
+      print('No wireless connection available 3');
+    }
+  }
+
   Future<bool> _promptPermissionSetting() async {
     print('_promptPermissionSetting');
 
@@ -139,74 +211,6 @@ class MyAppState extends State<MyApp> {
     return connectivityResult == ConnectivityResult.wifi;
   }
 
-  Future<void> _checkAndUploadPhotos() async {
-    bool isConnected = await _checkConnectivity();
-    // if (isConnected && isCharging && !_isUploading) {
-    if (isConnected && !_isUploading) {
-      setState(() {
-        _isUploading = true;
-      });
-      try {
-        print('_sendToServer');
-        await _sendToServer();
-      } finally {
-        setState(() {
-          _isUploading = false;
-        });
-      }
-    } else {
-      print('No wireless connection available 2 $isConnected');
-      print('No charging 2 $isCharging');
-      print('No busy uploading already. $_isUploading');
-    }
-  }
-
-  Future<void> _sendToServer() async {
-    if (await _checkConnectivity()) {
-      try {
-        if (mediaItems.isNotEmpty) {
-          for (var photo in mediaItems) {
-            var file = await PhotoGallery.getFile(mediumId: photo.id);
-            var request = http.MultipartRequest('POST', Uri.parse('http://10.2.35.24:5489/upload'));
-            request.files.add(await http.MultipartFile.fromPath('file', file.path));
-
-            var res = await request.send();
-            if (res.statusCode == 200) {
-              // Success: Handle the response data
-              final resData = await res.stream.bytesToString();
-              var data = json.decode(resData);
-              print(data);
-              if (data['fileHash'] != null) {
-                // Set the value of the current item to done.
-                photo.status = 1; // Update status to 1 (success)
-                photo.hash = data['fileHash']; // Assuming you want to update the hash as well
-              } else {
-                // Set the value of the current item to error.
-                photo.status = -1; // Update status to 2 (error)
-              }
-            } else if (res.statusCode == 409) {
-              // Conflict: Handle the conflict scenario
-              photo.status = 1;
-              print('Conflict: Resource already exists');
-            } else {
-              photo.status = -1; // Update status to 2 (error)
-              // Handle other status codes if needed
-              print('Error: Unexpected status code ${res.statusCode}');
-            }
-          }
-        }
-      } catch (err) {
-        print('err $err');
-      } finally {
-        setState(() {
-          _isUploading = false;
-        });
-      }
-    } else {
-      print('No wireless connection available 3');
-    }
-  }
-
   @override
   void dispose() {
     _connectivitySubscription?.cancel();
@@ -221,17 +225,60 @@ class MyAppState extends State<MyApp> {
           backgroundColor: Colors.grey[700],
           appBar: AppBar(
             title: const Text('Photoplicity'),
-            actions: [isCharging ? const Icon(color: Colors.green, Icons.battery_charging_full_sharp) : const Icon(color: Colors.red, Icons.battery_std_sharp)],
+            actions: [
+              isCharging
+                  ? const Padding(
+                      padding: EdgeInsets.only(left: 8, right: 8),
+                      child: Icon(color: Colors.green, Icons.battery_charging_full_sharp),
+                    )
+                  : const Padding(
+                      padding: EdgeInsets.only(left: 8, right: 8),
+                      child: Icon(color: Colors.red, Icons.battery_std_sharp),
+                    ),
+              GestureDetector(
+                onTap: () {
+                  showModalBottomSheet<void>(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return SizedBox(
+                        height: 600,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GestureDetector(onTap: () => {}, child: Icon(size: 40, color: Colors.red, Icons.close_sharp),),
+                            Padding(padding: const EdgeInsets.all(12),
+                              child: TextField(
+                                  textAlign: TextAlign.center,
+                                  controller: tbIpAddress,
+                                  decoration: InputDecoration(
+                                    isDense: true, // Added this
+                                    contentPadding: const EdgeInsets.all(12),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                  )),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+                child: const Padding(
+                  padding: EdgeInsets.only(left: 8, right: 8),
+                  child: Icon(color: Colors.grey, Icons.settings_sharp),
+                ),
+              )
+            ],
             backgroundColor: Colors.grey[700],
           ),
           body: isLoading
               ? const Center(child: CircularProgressIndicator())
               : mediaItems.isNotEmpty
                   ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                      const Padding(
-                        padding: EdgeInsets.only(left: 8.0, right: 8.0),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8.0, right: 8.0),
                         child: Card.filled(
-                            color: Color.fromARGB(255, 58, 58, 58),
+                            color: const Color.fromARGB(255, 58, 58, 58),
                             child: SizedBox(
                               width: 300,
                               height: 100,
@@ -242,39 +289,30 @@ class MyAppState extends State<MyApp> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                                     children: [
+                                      const Text('Done:', style: TextStyle(color: Colors.green)),
                                       Text(
-                                        'Done:',
-                                        style: TextStyle(color: Colors.green),
-                                      ),
-                                      Text(
-                                        '9000',
-                                        style: TextStyle(color: Colors.green),
+                                        _done.toString(),
+                                        style: const TextStyle(color: Colors.green),
                                       )
                                     ],
                                   ),
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                                     children: [
+                                      const Text('Busy:', style: TextStyle(color: Colors.orange)),
                                       Text(
-                                        'Busy:',
-                                        style: TextStyle(color: Colors.orange),
-                                      ),
-                                      Text(
-                                        '9000',
-                                        style: TextStyle(color: Colors.orange),
+                                        _busy.toString(),
+                                        style: const TextStyle(color: Colors.orange),
                                       )
                                     ],
                                   ),
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                                     children: [
+                                      const Text('Error:', style: TextStyle(color: Colors.red)),
                                       Text(
-                                        'Error:',
-                                        style: TextStyle(color: Colors.red),
-                                      ),
-                                      Text(
-                                        '9000',
-                                        style: TextStyle(color: Colors.red),
+                                        _error.toString(),
+                                        style: const TextStyle(color: Colors.red),
                                       )
                                     ],
                                   ),
@@ -288,7 +326,7 @@ class MyAppState extends State<MyApp> {
                           onSelectionChanged: filterMediaItems,
                         ),
                       ),
-                      SizedBox(height: MediaQuery.of(context).size.height - 300, child: _buildPhotoGrid(context))
+                      SizedBox(height: MediaQuery.of(context).size.height - 300, child: buildPhotoGrid(context))
                     ])
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -315,7 +353,7 @@ class MyAppState extends State<MyApp> {
     );
   }
 
-  Widget _buildPhotoGrid(BuildContext context) {
+  Widget buildPhotoGrid(BuildContext context) {
     return GridView.builder(
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
