@@ -9,10 +9,12 @@ class DatabaseHelper {
   static const _databaseVersion = 1;
   static const table = 'uploads';
 
+  // Constants for column names
   static const columnId = '_id';
-  static const columnHash = 'hash';
+  static const columnPhoneHash = 'phone_hash';
+  static const columnServerHash = 'server_hash';
   static const columnPath = 'path';
-  static const columnUploaded = 'uploaded';
+  static const columnStatus = 'status'; // Added column for status
 
   // Make this a singleton class.
   DatabaseHelper._privateConstructor();
@@ -33,49 +35,92 @@ class DatabaseHelper {
     await db.execute('''
           CREATE TABLE $table (
             $columnId INTEGER PRIMARY KEY,
-            $columnHash TEXT NOT NULL,
+            $columnPhoneHash TEXT NOT NULL,
+            $columnServerHash TEXT NOT NULL,
             $columnPath TEXT NOT NULL,
-            $columnUploaded BOOLEAN NOT NULL
+            $columnStatus  INT NOT NULL
           )
           ''');
   }
 
-  // Helper methods
-
-  // Inserts a row in the database
-  Future<int> insert(Map<String, dynamic> row) async {
+  Future<int> insertMediaItem({required String phoneHash, required String serverHash, required String path, required int status}) async {
     Database db = await instance.database;
-    return await db.insert(table, row);
+
+    // Check if a record with the same phoneHash already exists in the database
+    List<Map<String, dynamic>> existingRecords = await db.query(
+      table,
+      where: '$columnPhoneHash = ?',
+      whereArgs: [phoneHash],
+    );
+
+    if (existingRecords.isEmpty) {
+      // If no record with the same phoneHash exists, insert the new record
+      Map<String, dynamic> row = {
+        columnPhoneHash: phoneHash,
+        columnServerHash: serverHash,
+        columnPath: path,
+        columnStatus: status,
+      };
+      return await db.insert(table, row);
+    } else {
+      // If a record with the same phoneHash already exists, return 0 to indicate that no insertion was made
+      return 0;
+    }
   }
 
-  // All of the rows are returned as a list of maps, where each map is
-  // a key-value list of columns.
-  Future<List<Map<String, dynamic>>> queryAllRows() async {
+  Future<void> updateHashAndStatus(String phoneHash, String serverHash, int status) async {
     Database db = await instance.database;
-    return await db.query(table);
+    await db.update(
+      table,
+      {
+        columnServerHash: serverHash,
+        columnStatus: status,
+      },
+      where: '$columnPhoneHash = ?',
+      whereArgs: [phoneHash],
+    );
   }
 
-  // All uploads that haven't been backed up yet
-  Future<List<Map<String, dynamic>>> queryPendingUploads() async {
+  Future<void> updateStatus(String phoneHash, int status) async {
     Database db = await instance.database;
-    return await db.query(table, where: '$columnUploaded = ?', whereArgs: [false]);
+    await db.update(
+      table,
+      {
+        columnStatus: status,
+      },
+      where: '$columnPhoneHash = ?',
+      whereArgs: [phoneHash],
+    );
   }
 
-  // Update an uploaded file's status
-  Future<int> updateUploadStatus(int id, int uploaded) async {
+  Future<Map<int, int>> getStatusCounts() async {
     Database db = await instance.database;
-    return await db.update(table, {columnUploaded: uploaded}, where: '$columnId = ?', whereArgs: [id]);
+
+    // Perform separate queries to count records for each status
+    List<Map<String, dynamic>> doneCount = await db.rawQuery('SELECT COUNT(*) AS count FROM $table WHERE $columnStatus = 1');
+    List<Map<String, dynamic>> busyCount = await db.rawQuery('SELECT COUNT(*) AS count FROM $table WHERE $columnStatus = 0');
+    List<Map<String, dynamic>> errorCount = await db.rawQuery('SELECT COUNT(*) AS count FROM $table WHERE $columnStatus = -1');
+
+    // Extract count values from the query results
+    int done = doneCount.isNotEmpty ? doneCount[0]['count'] as int : 0;
+    int busy = busyCount.isNotEmpty ? busyCount[0]['count'] as int : 0;
+    int error = errorCount.isNotEmpty ? errorCount[0]['count'] as int : 0;
+
+    // Return counts as a map
+    return {1: done, 0: busy, -1: error};
   }
 
-  // Delete a record
-  Future<int> delete(int id) async {
+  Future<List<Map<String, dynamic>>> queryRowsByPath(String path) async {
     Database db = await instance.database;
-    return await db.delete(table, where: '$columnId = ?', whereArgs: [id]);
+    return await db.query(
+      table,
+      where: '$columnPath = ?',
+      whereArgs: [path],
+    );
   }
 
-  Future<void> clearDatabase() async {
-    Database db = await instance.database;
-    await db.execute('DROP TABLE IF EXISTS $table');
-    await _onCreate(db, _databaseVersion);
+  Future<void> deleteAllRecords() async {
+    final Database db = await instance.database;
+    await db.delete('uploads');
   }
 }

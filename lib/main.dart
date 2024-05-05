@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'dart:async';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:photo_gallery/photo_gallery.dart';
+import 'package:photoclient/database_helper.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -33,6 +34,7 @@ class MyAppState extends State<MyApp> {
   bool isLoading = false; // make sure it displays loading
   bool isCharging = false; //battery is charging
   bool isUploading = false; //is uploading or in uploading state.
+  bool isConnected = false; // Variable to track network connectivity
 
   final tbIpAddress = TextEditingController();
 
@@ -50,50 +52,112 @@ class MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     isLoading = true;
-    initAsync(); // check perms // get albums // set loading
-    _checkBatteryState(); // check the battery
+    initAsync();
+    _checkBatteryState();
 
+    // Check connectivity when the connection status changes
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((result) {
-      if (result == ConnectivityResult.wifi) {
-        _checkAndUploadPhotos();
-      } else {
-        print('No wireless connection available 1');
-      }
+      setState(() {
+        isConnected = result == ConnectivityResult.wifi;
+      });
     });
 
     _connectivityTimer = Timer.periodic(const Duration(minutes: 1), (Timer t) => _checkAndUploadPhotos());
   }
 
   Future<void> initAsync() async {
-    // checkAndroidVersion();
+    // Check permissions
     if (await _promptPermissionSetting()) {
-      //get the Albums
+      // Get the list of albums
       List<Album> albumsList = await PhotoGallery.listAlbums();
       MediaPage mediaList = await albumsList[0].listMedia();
 
+      // Clear existing mediaItems list
+      setState(() {
+        mediaItems.clear();
+      });
+
+      // Loop through the media items
       for (var i = 0; i < mediaList.items.length; i++) {
         final shaHash = await sha256Hash(mediaList.items[i].id);
 
-        mediaItems.add(MediaItem(
-          medium: mediaList.items[i],
-          id: mediaList.items[i].id,
-          hash: shaHash,
-          status: 0,
-        ));
+        // Check if the media item exists in the database
+        List<Map<String, dynamic>> existingRows = await DatabaseHelper.instance.queryRowsByPath(mediaList.items[i].id);
+        if (existingRows.isEmpty) {
+          // If it doesn't exist, insert it into the database
+          await DatabaseHelper.instance.insertMediaItem(
+            phoneHash: shaHash,
+            serverHash: '',
+            path: mediaList.items[i].id,
+            status: 0,
+          );
+        } else {
+          // If it exists, update the status in mediaItems
+          setState(() {
+            mediaItems.add(MediaItem(
+              medium: mediaList.items[i],
+              id: mediaList.items[i].id,
+              phoneHash: shaHash,
+              status: existingRows[0]['status'], // Get the status from the database
+            ));
+          });
+        }
       }
+      await fetchAndUpdateCounts();
 
       setState(() {
         isLoading = false;
         filteredMediaItems = List.from(mediaItems);
       });
     } else {
+      // Handle case where permission is not granted
+      setState(() {
+        isLoading = false;
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No Permission!')));
       }
     }
+  }
+
+  Future<void> fetchAndUpdateCounts() async {
+    // Update counts from the database
+    Map<int, int> statusCounts = await DatabaseHelper.instance.getStatusCounts();
     setState(() {
-      isLoading = false;
+      _done = statusCounts[1] ?? 0;
+      _busy = statusCounts[0] ?? 0;
+      _error = statusCounts[-1] ?? 0;
     });
+  }
+
+  Future<void> fetchAndInsertNewPhotos() async {
+    List<Album> albumsList = await PhotoGallery.listAlbums();
+    MediaPage mediaList = await albumsList[0].listMedia();
+
+    for (var i = 0; i < mediaList.items.length; i++) {
+      final shaHash = await sha256Hash(mediaList.items[i].id);
+      // Check if the media item already exists in the database
+      List<Map<String, dynamic>> existingRows = await DatabaseHelper.instance.queryRowsByPath(mediaList.items[i].id);
+      if (existingRows.isEmpty) {
+        // If the media item doesn't exist in the database, insert it
+        await DatabaseHelper.instance.insertMediaItem(
+          phoneHash: shaHash,
+          serverHash: '',
+          path: mediaList.items[i].id,
+          status: 0, // Assuming new items have status 0
+        );
+
+        // Add the new MediaItem instance to the mediaItems list
+        setState(() {
+          mediaItems.add(MediaItem(
+            medium: mediaList.items[i],
+            id: mediaList.items[i].id,
+            phoneHash: shaHash,
+            status: 0,
+          ));
+        });
+      }
+    }
   }
 
   Future<void> _checkBatteryState() async {
@@ -116,9 +180,12 @@ class MyAppState extends State<MyApp> {
   }
 
   Future<void> _checkAndUploadPhotos() async {
-    bool isConnected = await _checkConnectivity();
-    if (isConnected && isCharging && !isUploading) {
-      //if (isConnected && !isUploading) {
+    print('No wireless connection available 2 $isConnected');
+    print('No charging 2 $isCharging');
+    print('No busy uploading already. $isUploading');
+
+    // if (isConnected && isCharging && !isUploading) {
+    if (isConnected && !isUploading) {
       setState(() {
         isUploading = true;
       });
@@ -131,17 +198,17 @@ class MyAppState extends State<MyApp> {
         });
       }
     } else {
-      print('No wireless connection available 2 $isConnected');
-      print('No charging 2 $isCharging');
-      print('No busy uploading already. $isUploading');
+      print('_checkAndUploadPhotos PROBLEM');
     }
   }
 
   Future<void> _sendToServer() async {
-    if (await _checkConnectivity()) {
+    if (isConnected) {
       try {
         if (mediaItems.isNotEmpty) {
           for (var photo in mediaItems) {
+            String phoneHash = photo.phoneHash; // Extract phone hash from the photo object
+
             var file = await PhotoGallery.getFile(mediumId: photo.id);
             var request = http.MultipartRequest('POST', Uri.parse('http://$_ip:5489/upload'));
             request.files.add(await http.MultipartFile.fromPath('file', file.path));
@@ -155,17 +222,45 @@ class MyAppState extends State<MyApp> {
               if (data['fileHash'] != null) {
                 // Set the value of the current item to done.
                 photo.status = 1; // Update status to 1 (success)
-                photo.hash = data['fileHash']; // Assuming you want to update the hash as well
+
+                // Update hash and status in the database
+                await DatabaseHelper.instance.updateHashAndStatus(
+                  phoneHash,
+                  data['fileHash'], // Server hash
+                  1, // Status 1 for success
+                );
               } else {
                 // Set the value of the current item to error.
-                photo.status = -1; // Update status to 2 (error)
+                photo.status = -1; // Update status to -1 (error)
+
+                // Update status to -1 for error
+                await DatabaseHelper.instance.updateHashAndStatus(
+                  phoneHash,
+                  '', // Server hash (empty in case of error)
+                  -1, // Status -1 for error
+                );
               }
             } else if (res.statusCode == 409) {
               // Conflict: Handle the conflict scenario
               photo.status = 1;
+
+              // Update status to -1 for error
+              await DatabaseHelper.instance.updateStatus(
+                phoneHash,
+                1, // Status -1 for error
+              );
+
               print('Conflict: Resource already exists');
             } else {
               photo.status = -1; // Update status to 2 (error)
+
+              // Update status to -1 for error
+              await DatabaseHelper.instance.updateHashAndStatus(
+                phoneHash,
+                '', // Server hash (empty in case of error)
+                -1, // Status -1 for error
+              );
+
               // Handle other status codes if needed
               print('Error: Unexpected status code ${res.statusCode}');
             }
@@ -174,6 +269,8 @@ class MyAppState extends State<MyApp> {
       } catch (err) {
         print('err $err');
       } finally {
+        await fetchAndUpdateCounts();
+
         setState(() {
           isUploading = false;
         });
@@ -206,11 +303,6 @@ class MyAppState extends State<MyApp> {
     return storageStatus.isGranted;
   }
 
-  Future<bool> _checkConnectivity() async {
-    var connectivityResult = await Connectivity().checkConnectivity();
-    return connectivityResult == ConnectivityResult.wifi;
-  }
-
   @override
   void dispose() {
     _connectivitySubscription?.cancel();
@@ -226,6 +318,15 @@ class MyAppState extends State<MyApp> {
           appBar: AppBar(
             title: const Text('Photoplicity'),
             actions: [
+              isConnected
+                  ? const Padding(
+                      padding: EdgeInsets.only(left: 8, right: 8),
+                      child: Icon(color: Colors.green, Icons.signal_wifi_statusbar_4_bar_sharp),
+                    )
+                  : const Padding(
+                      padding: EdgeInsets.only(left: 8, right: 8),
+                      child: Icon(color: Colors.red, Icons.signal_wifi_off_sharp),
+                    ),
               isCharging
                   ? const Padding(
                       padding: EdgeInsets.only(left: 8, right: 8),
@@ -246,8 +347,12 @@ class MyAppState extends State<MyApp> {
                           mainAxisAlignment: MainAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            GestureDetector(onTap: () => {}, child: Icon(size: 40, color: Colors.red, Icons.close_sharp),),
-                            Padding(padding: const EdgeInsets.all(12),
+                            GestureDetector(
+                              onTap: () => {},
+                              child: Icon(size: 40, color: Colors.red, Icons.close_sharp),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.all(12),
                               child: TextField(
                                   textAlign: TextAlign.center,
                                   controller: tbIpAddress,
@@ -387,7 +492,7 @@ class MyAppState extends State<MyApp> {
         }
 
         return GestureDetector(
-          onTap: () => {print('this is a photo id: ${photo.id}'), print('this is a photo hash: ${photo.hash}')},
+          onTap: () => {print('this is a photo id: ${photo.id}'), print('this is a photo hash: ${photo.phoneHash}')},
           child: Stack(
             alignment: Alignment.bottomLeft,
             children: [
@@ -516,10 +621,10 @@ class _SegmentedButtonSelectionState extends State<SegmentedButtonSelection> {
 class MediaItem {
   final Medium medium; // Assuming Medium is a predefined class
   final String id;
-  String hash;
+  String phoneHash;
   int status;
 
-  MediaItem({required this.medium, required this.id, required this.hash, required this.status});
+  MediaItem({required this.medium, required this.id, required this.phoneHash, required this.status});
 }
 
 Future<String> sha256Hash(String photoid) async {
