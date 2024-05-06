@@ -348,7 +348,9 @@ class MyAppState extends State<MyApp> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             GestureDetector(
-                              onTap: () => {},
+                              onTap: () {
+                                Navigator.of(context).pop(); // Close the modal bottom sheet
+                              },
                               child: Icon(size: 40, color: Colors.red, Icons.close_sharp),
                             ),
                             Padding(
