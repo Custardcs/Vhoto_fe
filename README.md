@@ -1,16 +1,36 @@
-# photoclient
+# Vhoto Frontend / Mobile
 
-A new Flutter project.
+Vhoto Frontend / Mobile is a personal project designed to update and backup photos from your mobile phone to your own server. This project aims to provide a private, self-hosted alternative to relying on cloud services from Google, Apple, and others.
 
-## Getting Started
+## Features
 
-This project is a starting point for a Flutter application.
+- Upload photos from your mobile phone to your personal server
+- Automatic backup of photos
 
-A few resources to get you started if this is your first Flutter project:
+## ToDo
+- change the IP on the phone at the moment its hardcoded.
+- check battery issues if any
+- check that it only works when you are on your home network.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Usage
+
+1. You need Vhoto FE and the BE or any other api you have written
+2. 
+
+## Contributing
+
+Contributions are welcome! Please open an issue or submit a pull request if you have any suggestions or improvements.
+
+## License
+
+This project is licensed under the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
+
+## Acknowledgements
+
+- Inspiration from various open-source projects.
+- Thanks to the open-source community for their valuable resources and support.
+
+## Contact
+
+If you have any questions or need support, feel free to contact me on here.
