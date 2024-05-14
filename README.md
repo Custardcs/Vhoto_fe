@@ -16,7 +16,8 @@ Vhoto Frontend / Mobile is a personal project designed to update and backup phot
 ## Usage
 
 1. You need Vhoto FE and the BE or any other api you have written
-2. 
+2. The Vhoto BE needs to be running and set a upload directory
+3. Just run the app on your mobile device and wait 60 Seconds all should work.
 
 ## Contributing
 
@@ -28,8 +29,7 @@ This project is licensed under the GNU General Public License v3.0. See the [LIC
 
 ## Acknowledgements
 
-- Inspiration from various open-source projects.
-- Thanks to the open-source community for their valuable resources and support.
+- Inspiration from various current applications (Google/Apple/Amazon)
 
 ## Contact
 
