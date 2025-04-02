@@ -1,3 +1,5 @@
+This has stopped due to me finding https://immich.app/
+
 # Vhoto Frontend / Mobile
 
 Vhoto Frontend / Mobile is a personal project designed to update and backup photos from your mobile phone to your own server. This project aims to provide a private, self-hosted alternative to relying on cloud services from Google, Apple, and others.
